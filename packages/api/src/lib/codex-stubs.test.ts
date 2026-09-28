@@ -14,7 +14,7 @@ const parse = (stub: string) =>
 
 describe("buildCodexOAuthStub", () => {
   it("carries the vaulted ChatGPT account id, so Codex's workspace check finds it", () => {
-    const { tokens } = parse(buildCodexOAuthStub("acc_123"));
+    const { tokens } = parse(buildCodexOAuthStub({ accountId: "acc_123" }));
 
     expect(tokens.account_id).toBe("acc_123");
     expect(
@@ -24,7 +24,7 @@ describe("buildCodexOAuthStub", () => {
   });
 
   it("keeps every credential a placeholder", () => {
-    const { tokens } = parse(buildCodexOAuthStub("acc_123"));
+    const { tokens } = parse(buildCodexOAuthStub({ accountId: "acc_123" }));
 
     expect(tokens.access_token).toBe("onecli-managed");
     expect(tokens.refresh_token).toBe("onecli-managed");
@@ -33,7 +33,7 @@ describe("buildCodexOAuthStub", () => {
   it.each([undefined, null, ""])(
     "falls back to the placeholder account id without one (%s)",
     (accountId) => {
-      const { tokens } = parse(buildCodexOAuthStub(accountId));
+      const { tokens } = parse(buildCodexOAuthStub({ accountId }));
 
       expect(tokens.account_id).toBe("onecli-managed");
       expect(
@@ -43,15 +43,38 @@ describe("buildCodexOAuthStub", () => {
     },
   );
 
-  it("still produces the original placeholder id_token without an account id", () => {
+  it("stamps the vaulted ChatGPT plan, so Codex doesn't treat a paid plan as free", () => {
+    const { tokens } = parse(
+      buildCodexOAuthStub({ accountId: "acc_123", planType: "plus" }),
+    );
+
+    expect(
+      decodeClaims(tokens.id_token!)["https://api.openai.com/auth"]
+        .chatgpt_plan_type,
+    ).toBe("plus");
+  });
+
+  it.each([undefined, null, ""])(
+    "leaves the plan claim out rather than guessing one (%s)",
+    (planType) => {
+      const { tokens } = parse(
+        buildCodexOAuthStub({ accountId: "acc_123", planType }),
+      );
+
+      expect(
+        decodeClaims(tokens.id_token!)["https://api.openai.com/auth"],
+      ).not.toHaveProperty("chatgpt_plan_type");
+    },
+  );
+
+  it("never advertises the free plan by default", () => {
     const { tokens } = parse(buildCodexOAuthStub());
 
-    expect(tokens.id_token).toBe(
-      [
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
-        "eyJzdWIiOiJvbmVjbGktbWFuYWdlZCIsImVtYWlsIjoib25lY2xpQG9uZWNsaS5zaCIsImV4cCI6NDEwMjQ0NDgwMCwiaWF0IjoxNzM1Njg5NjAwLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9wbGFuX3R5cGUiOiJmcmVlIiwiY2hhdGdwdF91c2VyX2lkIjoib25lY2xpLW1hbmFnZWQiLCJjaGF0Z3B0X2FjY291bnRfaWQiOiJvbmVjbGktbWFuYWdlZCJ9fQ",
-        "b25lY2xpLW1hbmFnZWQtc2lnbmF0dXJl",
-      ].join("."),
-    );
+    expect(
+      decodeClaims(tokens.id_token!)["https://api.openai.com/auth"],
+    ).toEqual({
+      chatgpt_user_id: "onecli-managed",
+      chatgpt_account_id: "onecli-managed",
+    });
   });
 });

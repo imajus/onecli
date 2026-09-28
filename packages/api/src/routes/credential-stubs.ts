@@ -27,22 +27,26 @@ const resolveCodexStub = async (
       (s) => parseOpenaiMetadata(s.metadata)?.authMode === "api-key",
     );
 
-  // The stub carries one ChatGPT account id. Use it only when every OAuth
-  // secret agrees on it; otherwise we can't know which one the gateway will
-  // inject, so keep the placeholder.
-  const accountIds = new Set(
-    openaiSecrets
-      .map((s) => parseOpenaiMetadata(s.metadata))
-      .filter((m) => m?.authMode === "oauth")
-      .map((m) => m?.accountId),
-  );
-  const [onlyAccountId] = accountIds;
-  const accountId = accountIds.size === 1 ? onlyAccountId : undefined;
+  // The stub carries one ChatGPT account id and plan. Use each only when every
+  // OAuth secret agrees on it; otherwise we can't know which one the gateway
+  // will inject, so keep the placeholder account and leave the plan out.
+  const oauthMetas = openaiSecrets
+    .map((s) => parseOpenaiMetadata(s.metadata))
+    .filter((m) => m?.authMode === "oauth");
+  const agreed = (values: Array<string | undefined>) => {
+    const unique = new Set(values);
+    const [only] = unique;
+    return unique.size === 1 ? only : undefined;
+  };
+  const accountId = agreed(oauthMetas.map((m) => m?.accountId));
+  const planType = agreed(oauthMetas.map((m) => m?.planType));
 
   return {
     agent: "codex",
     filePath: "~/.codex/auth.json",
-    content: allApiKey ? CODEX_APIKEY_STUB : buildCodexOAuthStub(accountId),
+    content: allApiKey
+      ? CODEX_APIKEY_STUB
+      : buildCodexOAuthStub({ accountId, planType }),
     authMode: allApiKey ? "api-key" : "oauth",
     permissions: "0600",
   };
